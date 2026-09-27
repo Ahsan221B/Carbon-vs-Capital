@@ -1,0 +1,95 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+/.venv/
+/venv/
+/env/
+/ENV/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ---------- macOS ----------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ---------- Editor / IDE ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vim/
+.nvim/
+
+# ---------- Secrets ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*.p12
+*.key
+secrets/
+.credentials/
+.databrickscfg
+
+# ---------- Personal notes (not for publication) ----------
+/brief.md
+
+# ---------- Local data (Climate TRACE downloads etc.) ----------
+data/*
+!data/.gitkeep
+*.zip
+*.csv
+*.parquet
+*.gz
+
+
+# Exception: small test fixtures ARE tracked
+!tests/**/*.csv
+!tests/**/*.parquet
+!tests/**/fixtures/**
+!sql/seed/**/*.csv
+!eval/**/*.csv
+
+# ---------- Databricks ----------
+.databricks/
+
+# ---------- Terraform ----------
+*.tfstate
+*.tfstate.*
+.terraform/
+crash.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# ---------- Misc ----------
+*.log
+Thumbs.db
+
+#------------ BI ----------
+**/.pbi/localSettings.json
+**/.pbi/cache.abf
