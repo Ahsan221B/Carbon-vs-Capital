@@ -86,14 +86,53 @@ until Phase 7, when this log becomes the specification for Terraform (see ADR 00
 
 ---
 
+## 2026-09-28 — Key Vault
+
+| Setting | Value | Why |
+|---|---|---|
+| Name | `kv-carboncap-dev-zm` | Globally unique; `kv-` prefix |
+| Region | East US 2 | |
+| Pricing tier | Standard | Premium only adds HSM-backed keys; not needed |
+| Permission model | Azure RBAC | Current recommendation; same role system as storage (not legacy access policies) |
+| Soft-delete retention | 7 days (minimum) | Soft delete is mandatory; a deleted vault's name stays reserved during retention |
+| Purge protection | Disabled | Would block permanent deletion until retention ends and can't be turned off again; enable in production |
+| Resource access (VMs, ARM templates, disk encryption) | All disabled | Not used |
+| Public network access | Enabled from all networks | Private endpoints not used (cost) |
+| Tags | `project=carbon-vs-capital`, `env=dev`, `owner=zef` | |
+
+**Access control (RBAC)**
+
+| Principal | Role | Scope |
+|---|---|---|
+| Zef (user) | Key Vault Secrets Officer | Key Vault |
+
+> As with storage: subscription Owner can manage the vault (control plane)
+> but can't read or write secrets (data plane) without a data role.
+
+**Secrets**
+
+| Name | Purpose |
+|---|---|
+| `smoke-test` | Dummy value used to test Databricks → secret scope → Key Vault access. Delete after Phase 0 |
+
+**Planned secrets:** Snowflake loader private key and passphrase (Phase 6), Stooq API key and
+OpenFIGI API key (Phase 1). Azure SQL will use Entra-only authentication, so no SQL password is stored.
+
+**Estimated cost:** effectively $0 (Standard tier: about $0.03 per 10,000 operations, no base fee).
+
+---
+
 ## Known limitations (development environment)
 
 - LRS only. Bronze contains data that can't be recreated later (CDC history, daily price snapshots); production would use ZRS or GZRS.
 - No private endpoints; the storage account is reachable over the public internet (authentication still required).
 - Defender for Storage is off.
 - Storage account key access is still enabled.
+- Key Vault is reachable over the public internet (no private endpoint); purge protection is off.
 
 ## Teardown
 
 - **Everything:** delete `rg-carbon-capital-dev`. Soft-deleted blobs are kept (and billed) for 7 days.
 - **Budget:** lives at billing-account scope, so delete it separately in Cost Management.
+- A deleted Key Vault stays soft-deleted for 7 days and its name stays reserved. To reuse the name
+  sooner, purge it: Key Vaults → Manage deleted vaults → Purge.
