@@ -122,6 +122,47 @@ OpenFIGI API key (Phase 1). Azure SQL will use Entra-only authentication, so no 
 
 ---
 
+## 2026-09-28 — Compute quota (East US 2)
+
+Classic Databricks clusters run as virtual machines in this subscription, so they need
+per-VM-family vCPU quota. New pay-as-you-go subscriptions start with 0 for most families.
+
+**Resource providers registered** (free; required before quotas are visible or usable)
+
+| Provider | Needed for |
+|---|---|
+| `Microsoft.Compute` | Virtual machines behind Databricks clusters; compute quotas |
+| `Microsoft.Databricks` | Databricks workspace and access connector |
+| `Microsoft.Network` | Virtual network created for the workspace |
+| `Microsoft.Quota` | Quota increase requests from the portal |
+
+**Quota requests**
+
+| Family | Requested | Result |
+|---|---|---|
+| Standard DADSv5 | 8 vCPUs | Refused (self-service): "high in demand in East US 2" |
+| Standard DDSv5 | 8 vCPUs | Refused (self-service), then **approved via support request `2609280030003568`** |
+| Standard DSv5 | 8 vCPUs | Refused (self-service) |
+
+**Current limits**
+
+| Quota | Limit |
+|---|---|
+| Total Regional vCPUs | 10 |
+| Standard DDSv5 Family vCPUs | **8** |
+| Total Regional Low-priority (Spot) vCPUs | 3 (too low for a 4-vCPU node) |
+
+**Cluster node type:** `Standard_D4ds_v5` (4 vCPUs, 16 GB RAM, local SSD).
+The 8-vCPU quota allows at most two single-node clusters at once (one interactive, one job).
+Compute strategy: ADR 0008 (supersedes ADR 0007).
+
+> Notes
+> - DSv3 is flagged End of Life by the portal; avoid it even though older tutorials use it.
+> - v6 families have quota but aren't in Databricks' supported node type list.
+> - Check quotas: `az vm list-usage --location eastus2 -o table | grep -i "DDSv5"`
+
+---
+
 ## Known limitations (development environment)
 
 - LRS only. Bronze contains data that can't be recreated later (CDC history, daily price snapshots); production would use ZRS or GZRS.
@@ -129,6 +170,8 @@ OpenFIGI API key (Phase 1). Azure SQL will use Entra-only authentication, so no 
 - Defender for Storage is off.
 - Storage account key access is still enabled.
 - Key Vault is reachable over the public internet (no private endpoint); purge protection is off.
+- Databricks workspace deployed without secure cluster connectivity (no NAT gateway, to avoid ~$30+/month);
+  classic cluster nodes get public IP addresses, still behind network security rules.
 
 ## Teardown
 

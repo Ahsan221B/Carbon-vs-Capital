@@ -1,6 +1,6 @@
 # ADR 0007: Use Databricks serverless compute for development; add classic job clusters when quota allows
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR 0008
 - **Date:** 2026-09-28
 
 ## Context
@@ -46,3 +46,9 @@ region as the workspace, so it doesn't use our subscription's VM quota.
   notebook activities bound to a cluster. Confirm in Phase 1.
 - **Learning gap:** cluster sizing and cluster policies aren't exercised until classic quota arrives;
   tracked as a follow-up.
+
+
+## Update — 2026-09-28
+  Support request approved: Standard DDSv5 quota raised to 8 vCPUs in East US 2.
+  Classic single-node job clusters (Standard_D4ds_v5) are now available and will run scheduled
+  pipeline jobs from Phase 1; interactive development stays on serverless.
