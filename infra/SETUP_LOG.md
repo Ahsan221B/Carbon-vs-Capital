@@ -271,6 +271,29 @@ All four passed "Test connection" (read, list, write, delete).
 - Managed locations and the volume use separate sibling sub-paths, because Unity Catalog forbids overlapping managed storage with external volumes.
 
 **Estimated cost:** $0 (metadata only).
+## 2026-09-29 — Access connector (Unity Catalog → ADLS)
+
+| Setting | Value | Why |
+|---|---|---|
+| Name | `ac-carboncap-dev` | Our own connector, not the auto-created one in the locked managed resource group |
+| Resource group | `rg-carbon-capital-dev` | Storage access survives a workspace rebuild; reusable by future workspaces |
+| Region | East US 2 | |
+| Identity | System-assigned managed identity | No keys or secrets; Azure issues and rotates tokens |
+| Tags | `project=carbon-vs-capital`, `env=dev`, `owner=zef` | |
+
+**Access control (RBAC) on `stcarboncapdevzm`**
+
+| Principal | Role | Scope |
+|---|---|---|
+| Zef (user) | Storage Blob Data Contributor | Storage account |
+| `ac-carboncap-dev` (managed identity) | Storage Blob Data Contributor | Storage account |
+
+> Azure grants coarse account-level access to the connector; Unity Catalog enforces fine-grained,
+> per-user access to catalogs, schemas, tables and external locations.
+
+**Not used:** `unity-catalog-access-connector` in the managed resource group (auto-created with the workspace).
+
+**Estimated cost:** $0.
 
 ---
 
@@ -284,11 +307,11 @@ All four passed "Test connection" (read, list, write, delete).
 - Databricks workspace deployed without secure cluster connectivity (no NAT gateway, to avoid ~$30+/month);
   classic cluster nodes get public IP addresses, still behind network security rules.
 - Unity Catalog file events not configured; Auto Loader uses directory listing.
+- The access connector has account-wide Storage Blob Data Contributor; fine-grained access is enforced by Unity Catalog.
 
 ## Teardown
 
 - **Everything:** delete `rg-carbon-capital-dev`. Soft-deleted blobs are kept (and billed) for 7 days.
 - **Budget:** lives at billing-account scope, so delete it separately in Cost Management.
 - A deleted Key Vault stays soft-deleted for 7 days and its name stays reserved. To reuse the name
-  sooner, purge it: Key Vaults → Manage deleted vaults → Purge.
-- Deleting the Databricks workspace also deletes its managed resource group.
+  sooner, purge it: Key Vaults → Manage deleted vaults → Purge.- Deleting the Databricks workspace also deletes its managed resource group.
