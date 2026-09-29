@@ -154,13 +154,14 @@ per-VM-family vCPU quota. New pay-as-you-go subscriptions start with 0 for most 
 
 **Cluster node type:** `Standard_D4ds_v5` (4 vCPUs, 16 GB RAM, local SSD).
 The 8-vCPU quota allows at most two single-node clusters at once (one interactive, one job).
-Compute strategy: ADR 0008 (supersedes ADR 0007).
+Compute strategy: ADR 0008 (supersedes ADR 0007). See "First compute" below: the SKU itself is
+currently restricted for this subscription, which is a separate gate from quota.
 
 > Notes
 > - DSv3 is flagged End of Life by the portal; avoid it even though older tutorials use it.
 > - v6 families have quota but aren't in Databricks' supported node type list.
 > - Check quotas: `az vm list-usage --location eastus2 -o table | grep -i "DDSv5"`
-
+> - Check SKU access: `az vm list-skus --location eastus2 --size Standard_D4ds_v5 --all -o table`
 
 ---
 
@@ -172,11 +173,11 @@ Compute strategy: ADR 0008 (supersedes ADR 0007).
 | Region | East US 2 | ADR 0001 |
 | Pricing tier | Trial (Premium, 14 days of free DBUs) | Premium is required for Unity Catalog |
 | **Trial ends** | **2026-10-13** | After this, DBUs are billed at the Premium rate |
-| Workspace type | Hybrid (classic + serverless) | ADR 0008: classic by default, serverless available |
+| Workspace type | Hybrid (classic + serverless) | ADR 0008: classic by default; serverless used while classic SKUs are restricted |
 | Managed resource group | `rg-carbon-capital-dev-dbw-managed` | Named explicitly instead of the auto-generated name |
 | Secure cluster connectivity (No Public IP) | **Disabled** | Avoids an auto-created NAT gateway (~$30+/month, always on) |
 | VNet injection | No | Databricks-managed network |
-| Tags | `project=carbon-vs-capital`, `env=dev`, `owner=zef` | |
+| Tags | `project=carbon-vs-capital`, `env=dev`, `owner=zef` | Inherited by clusters as default tags |
 
 **Managed resource group contents** (locked by Databricks with a deny assignment; don't modify)
 
@@ -216,7 +217,7 @@ Compute strategy: ADR 0008 (supersedes ADR 0007).
 | Availability | On-demand (no Spot) |
 | Runtime | Latest LTS by default |
 | Access mode | Dedicated (`SINGLE_USER`), Unity Catalog-enabled |
-| Tags | `project`, `env`, `owner` stamped on cluster VMs for cost tracking |
+| Tags | Not set in the policy; `project`, `env`, `owner` are inherited from the workspace's Azure tags (setting them in the policy caused a naming conflict) |
 
 > A workspace admin can still create clusters outside the policy; it's a guardrail against mistakes.
 > The 8-vCPU DDSv5 quota is the hard limit (at most two single-node clusters).
@@ -226,51 +227,6 @@ Compute strategy: ADR 0008 (supersedes ADR 0007).
 
 ---
 
-## 2026-09-29 — Unity Catalog storage credential and external locations
-
-**Storage credential**
-
-| Name | Type | Identity | Purpose |
-|---|---|---|---|
-| `cred_carboncap_adls` | Azure Managed Identity | Access connector `ac-carboncap-dev` (system-assigned) | Unity Catalog's identity for reaching `stcarboncapdevzm` |
-
-**External locations**
-
-| Name | URL | Credential | Use |
-|---|---|---|---|
-| `ext_landing` | `abfss://landing@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Raw source files (zips, JSON) as received |
-| `ext_bronze` | `abfss://bronze@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Managed storage for the bronze schema |
-| `ext_silver` | `abfss://silver@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Managed storage for the silver schema |
-| `ext_gold` | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Managed storage for the gold schema |
-
-All four passed "Test connection" (read, list, write, delete).
-
-> Pattern: Azure RBAC gives the access connector coarse access to the storage account;
-> Unity Catalog grants (READ FILES, WRITE FILES, CREATE MANAGED STORAGE, ...) control
-> per-user access per path. No mount points, storage keys or service principal secrets are used.
-
-**File events:** off for now (Auto Loader notification mode to be decided in Phase 2).
-
-**Estimated cost:** $0 (metadata only).
-
----
-
-## 2026-09-29 — Unity Catalog catalog, schemas and volume
-
-| Object | Type | Storage |
-|---|---|---|
-| `carbon_capital` | Catalog (Standard) | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/_catalog_default` (fallback only) |
-| `carbon_capital.bronze` | Schema (managed tables) | `abfss://bronze@stcarboncapdevzm.dfs.core.windows.net/managed` |
-| `carbon_capital.silver` | Schema (managed tables) | `abfss://silver@stcarboncapdevzm.dfs.core.windows.net/managed` |
-| `carbon_capital.gold` | Schema (managed tables) | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/managed` |
-| `carbon_capital.landing` | Schema (volumes only) | inherits the catalog location (unused) |
-| `carbon_capital.landing.raw` | External volume | `abfss://landing@stcarboncapdevzm.dfs.core.windows.net/files` |
-
-- Tables are Unity Catalog **managed** tables stored in our own containers (not Databricks' internal storage).
-- Source files are accessed as `/Volumes/carbon_capital/landing/raw/...`, governed by Unity Catalog.
-- Managed locations and the volume use separate sibling sub-paths, because Unity Catalog forbids overlapping managed storage with external volumes.
-
-**Estimated cost:** $0 (metadata only).
 ## 2026-09-29 — Access connector (Unity Catalog → ADLS)
 
 | Setting | Value | Why |
@@ -297,6 +253,113 @@ All four passed "Test connection" (read, list, write, delete).
 
 ---
 
+## 2026-09-29 — Unity Catalog storage credential and external locations
+
+**Storage credential**
+
+| Name | Type | Identity | Purpose |
+|---|---|---|---|
+| `cred_carboncap_adls` | Azure Managed Identity | Access connector `ac-carboncap-dev` (system-assigned) | Unity Catalog's identity for reaching `stcarboncapdevzm` |
+
+**External locations**
+
+| Name | URL | Credential |
+|---|---|---|
+| `ext_landing` | `abfss://landing@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
+| `ext_bronze` | `abfss://bronze@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
+| `ext_silver` | `abfss://silver@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
+| `ext_gold` | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
+
+Test connection: read, list, write, delete, path exists and hierarchical namespace all passed.
+
+**File events: not configured.** The test failed with 403 because the connector lacks Storage Account
+Contributor, EventGrid EventSubscription Contributor and Storage Queue Data Contributor. Not granted
+on purpose: Storage Account Contributor is a broad control-plane role (it can read account keys).
+Auto Loader will use directory listing, which is fine at this file volume. Revisit in Phase 2.
+
+> Pattern: Azure RBAC gives the connector coarse access to the storage account; Unity Catalog
+> grants control per-user access per path. No mount points, storage keys or service principal secrets.
+
+**Not used:** credential and external location `dbw_carboncap_dev` (auto-created for the default workspace catalog).
+
+**Estimated cost:** $0 (metadata only).
+
+---
+
+## 2026-09-29 — Unity Catalog catalog, schemas and volume
+
+| Object | Type | Storage |
+|---|---|---|
+| `carbon_capital` | Catalog (Standard) | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/_catalog_default` (fallback only) |
+| `carbon_capital.bronze` | Schema (managed tables) | `abfss://bronze@stcarboncapdevzm.dfs.core.windows.net/managed` |
+| `carbon_capital.silver` | Schema (managed tables) | `abfss://silver@stcarboncapdevzm.dfs.core.windows.net/managed` |
+| `carbon_capital.gold` | Schema (managed tables) | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/managed` |
+| `carbon_capital.landing` | Schema (volumes only) | none of its own |
+| `carbon_capital.landing.raw` | External volume | `abfss://landing@stcarboncapdevzm.dfs.core.windows.net/files` |
+
+- Tables are Unity Catalog **managed** tables stored in our own containers (not Databricks' internal storage).
+- Code reads source files as `/Volumes/carbon_capital/landing/raw/...`; the physical path is never hard-coded.
+- Managed locations and the volume use separate sibling sub-paths, because Unity Catalog forbids overlapping managed storage with external volumes.
+- The auto-created `default` schema was deleted, so tables created without a schema fail instead of landing in the fallback location.
+- Verified by uploading a test CSV through Catalog Explorer and finding it in the `landing` container.
+
+**Estimated cost:** $0 (metadata only).
+
+---
+
+## 2026-09-29 — Key Vault-backed secret scope
+
+| Setting | Value |
+|---|---|
+| Scope name | `kv-carboncap` |
+| Backend | Azure Key Vault `kv-carboncap-dev-zm` (`https://kv-carboncap-dev-zm.vault.azure.net/`) |
+| Manage principal | Creator |
+
+**Access control (RBAC) on `kv-carboncap-dev-zm`**
+
+| Principal | Role | Why |
+|---|---|---|
+| Zef (user) | Key Vault Secrets Officer | Create and manage secrets |
+| AzureDatabricks (enterprise app `2ff814a6-3304-4ab8-85cb-cd0e6f879c1d`) | Key Vault Secrets User | Lets the secret scope read secrets (read-only) |
+
+- Secrets stay in Key Vault (rotation and audit in Azure); code uses `dbutils.secrets.get("kv-carboncap", "<name>")`.
+- Notebook output redacts secret values, but redaction is a convenience, not a security control:
+  anyone who can run code with access to the scope can recover the value. The real protection is who can
+  use the scope and the vault (scope permissions and Azure RBAC).
+- The application (client) ID above is the same in every tenant; the service principal's object ID in our tenant is different. That's expected.
+
+**Estimated cost:** $0.
+
+---
+
+## 2026-09-29 — First compute and end-to-end smoke test
+
+**Classic cluster (blocked)**
+
+| Setting | Value |
+|---|---|
+| Cluster | `carboncap-dev-interactive` (all-purpose, policy `carboncap-interactive-single-node`) |
+| Result | Failed to start: `CLOUD_PROVIDER_RESOURCE_STOCKOUT` |
+| Diagnosis | `az vm list-skus --location eastus2 --all`: D4ds_v5, D4ads_v5, D4s_v5, E4bds_v5 = `NotAvailableForSubscription` |
+| Action | Support request to lift the SKU restriction (quota already approved in request 2609280030003568) |
+
+> Three separate gates for Azure VMs: quota (vCPU permission), SKU access (per subscription and region), capacity.
+
+**Smoke test on serverless compute** (scratch notebook, not committed)
+
+| Check | Result |
+|---|---|
+| `dbutils.secrets.get("kv-carboncap", "smoke-test")` | Value read, redacted in output (length 19) |
+| Write + read CSV via `/Volumes/carbon_capital/landing/raw/` | 2 rows read back; file visible in `landing/files/` |
+| Managed Delta table in `carbon_capital.bronze` | Stored under `abfss://bronze@stcarboncapdevzm.dfs.core.windows.net/managed/__unitystorage/...` |
+| Clean-up | Test table dropped, test files removed (verified in the Storage browser) |
+
+Phase 0 done criterion met: a Databricks notebook reads a file from ADLS through Unity Catalog.
+
+**Cost:** serverless, billed per second only while running (a few cents at most); verify in Cost Management.
+
+---
+
 ## Known limitations (development environment)
 
 - LRS only. Bronze contains data that can't be recreated later (CDC history, daily price snapshots); production would use ZRS or GZRS.
@@ -308,10 +371,14 @@ All four passed "Test connection" (read, list, write, delete).
   classic cluster nodes get public IP addresses, still behind network security rules.
 - Unity Catalog file events not configured; Auto Loader uses directory listing.
 - The access connector has account-wide Storage Blob Data Contributor; fine-grained access is enforced by Unity Catalog.
+- The AzureDatabricks app can read every secret in the vault (acceptable: the vault is dedicated to this project).
+- Classic VM sizes are restricted for this subscription in East US 2; development runs on serverless until lifted (ADR 0008 update).
+- The cluster policy is a guardrail against mistakes; a workspace admin can still create clusters outside it.
 
 ## Teardown
 
 - **Everything:** delete `rg-carbon-capital-dev`. Soft-deleted blobs are kept (and billed) for 7 days.
 - **Budget:** lives at billing-account scope, so delete it separately in Cost Management.
 - A deleted Key Vault stays soft-deleted for 7 days and its name stays reserved. To reuse the name
-  sooner, purge it: Key Vaults → Manage deleted vaults → Purge.- Deleting the Databricks workspace also deletes its managed resource group.
+  sooner, purge it: Key Vaults → Manage deleted vaults → Purge.
+- Deleting the Databricks workspace also deletes its managed resource group.
