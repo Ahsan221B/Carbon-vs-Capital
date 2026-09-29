@@ -161,6 +161,69 @@ Compute strategy: ADR 0008 (supersedes ADR 0007).
 > - v6 families have quota but aren't in Databricks' supported node type list.
 > - Check quotas: `az vm list-usage --location eastus2 -o table | grep -i "DDSv5"`
 
+
+---
+
+## 2026-09-29 — Azure Databricks workspace
+
+| Setting | Value | Why |
+|---|---|---|
+| Name | `dbw-carboncap-dev` | `dbw-` prefix |
+| Region | East US 2 | ADR 0001 |
+| Pricing tier | Trial (Premium, 14 days of free DBUs) | Premium is required for Unity Catalog |
+| **Trial ends** | **2026-10-13** | After this, DBUs are billed at the Premium rate |
+| Workspace type | Hybrid (classic + serverless) | ADR 0008: classic by default, serverless available |
+| Managed resource group | `rg-carbon-capital-dev-dbw-managed` | Named explicitly instead of the auto-generated name |
+| Secure cluster connectivity (No Public IP) | **Disabled** | Avoids an auto-created NAT gateway (~$30+/month, always on) |
+| VNet injection | No | Databricks-managed network |
+| Tags | `project=carbon-vs-capital`, `env=dev`, `owner=zef` | |
+
+**Managed resource group contents** (locked by Databricks with a deny assignment; don't modify)
+
+| Resource | Purpose |
+|---|---|
+| `workers-vnet`, `workers-sg` | Network and security rules for cluster VMs |
+| `dbstorage…` | The workspace's internal storage |
+| `dbmanagedidentity` | Identity Databricks uses internally |
+| `unity-catalog-access-connector` | Auto-created access connector; **not used**, because we create our own (see below) |
+
+**Unity Catalog:** enabled automatically; a regional metastore is attached.
+
+| Catalog | Notes |
+|---|---|
+| `dbw_carboncap_dev` | Auto-created default workspace catalog, stored in managed storage; not used for project data |
+| `system` | Databricks system tables (billing, audit, lineage) |
+| `samples` | Read-only demo data shared by Databricks |
+
+**Serverless Starter Warehouse** (auto-created)
+
+| Setting | Value |
+|---|---|
+| Type / size | Serverless SQL, 2X-Small |
+| Auto stop | 5 minutes |
+| Scaling | Max 1 cluster |
+| Note | Bills only while running; previewing data in Catalog Explorer can start it. Not needed, because Snowflake serves BI |
+
+**Cluster policy: `carboncap-interactive-single-node`** (interactive clusters only; job-cluster policy in Phase 1)
+
+| Rule | Value |
+|---|---|
+| Cluster type | All-purpose only |
+| Topology | Single node (0 workers) |
+| Node type | `Standard_D4ds_v5` (fixed) |
+| Auto-termination | 15 minutes (fixed) |
+| Photon | Off (`runtime_engine = STANDARD`) |
+| Availability | On-demand (no Spot) |
+| Runtime | Latest LTS by default |
+| Access mode | Dedicated (`SINGLE_USER`), Unity Catalog-enabled |
+| Tags | `project`, `env`, `owner` stamped on cluster VMs for cost tracking |
+
+> A workspace admin can still create clusters outside the policy; it's a guardrail against mistakes.
+> The 8-vCPU DDSv5 quota is the hard limit (at most two single-node clusters).
+
+**Estimated cost:** workspace $0; managed storage cents per month; clusters billed only while running
+(during the trial, mainly the VM, roughly $0.20–0.25/hour for D4ds_v5).
+
 ---
 
 ## Known limitations (development environment)
@@ -179,3 +242,4 @@ Compute strategy: ADR 0008 (supersedes ADR 0007).
 - **Budget:** lives at billing-account scope, so delete it separately in Cost Management.
 - A deleted Key Vault stays soft-deleted for 7 days and its name stays reserved. To reuse the name
   sooner, purge it: Key Vaults → Manage deleted vaults → Purge.
+- Deleting the Databricks workspace also deletes its managed resource group.
