@@ -226,6 +226,51 @@ Compute strategy: ADR 0008 (supersedes ADR 0007).
 
 ---
 
+## 2026-09-29 — Unity Catalog storage credential and external locations
+
+**Storage credential**
+
+| Name | Type | Identity | Purpose |
+|---|---|---|---|
+| `cred_carboncap_adls` | Azure Managed Identity | Access connector `ac-carboncap-dev` (system-assigned) | Unity Catalog's identity for reaching `stcarboncapdevzm` |
+
+**External locations**
+
+| Name | URL | Credential | Use |
+|---|---|---|---|
+| `ext_landing` | `abfss://landing@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Raw source files (zips, JSON) as received |
+| `ext_bronze` | `abfss://bronze@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Managed storage for the bronze schema |
+| `ext_silver` | `abfss://silver@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Managed storage for the silver schema |
+| `ext_gold` | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Managed storage for the gold schema |
+
+All four passed "Test connection" (read, list, write, delete).
+
+> Pattern: Azure RBAC gives the access connector coarse access to the storage account;
+> Unity Catalog grants (READ FILES, WRITE FILES, CREATE MANAGED STORAGE, ...) control
+> per-user access per path. No mount points, storage keys or service principal secrets are used.
+
+**File events:** off for now (Auto Loader notification mode to be decided in Phase 2).
+
+**Estimated cost:** $0 (metadata only).
+
+---
+
+## 2026-09-29 — Unity Catalog catalog, schemas and volume
+
+| Object | Type | Storage |
+|---|---|---|
+| `carbon_capital` | Catalog (Standard) | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/_catalog_default` (fallback only) |
+| `carbon_capital.bronze` | Schema (managed tables) | `abfss://bronze@stcarboncapdevzm.dfs.core.windows.net/managed` |
+| `carbon_capital.silver` | Schema (managed tables) | `abfss://silver@stcarboncapdevzm.dfs.core.windows.net/managed` |
+| `carbon_capital.gold` | Schema (managed tables) | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/managed` |
+| `carbon_capital.landing` | Schema (volumes only) | inherits the catalog location (unused) |
+| `carbon_capital.landing.raw` | External volume | `abfss://landing@stcarboncapdevzm.dfs.core.windows.net/files` |
+
+- Tables are Unity Catalog **managed** tables stored in our own containers (not Databricks' internal storage).
+- Source files are accessed as `/Volumes/carbon_capital/landing/raw/...`, governed by Unity Catalog.
+- Managed locations and the volume use separate sibling sub-paths, because Unity Catalog forbids overlapping managed storage with external volumes.
+
+**Estimated cost:** $0 (metadata only).
 ## 2026-09-29 — Access connector (Unity Catalog → ADLS)
 
 | Setting | Value | Why |
@@ -261,6 +306,7 @@ Compute strategy: ADR 0008 (supersedes ADR 0007).
 - Key Vault is reachable over the public internet (no private endpoint); purge protection is off.
 - Databricks workspace deployed without secure cluster connectivity (no NAT gateway, to avoid ~$30+/month);
   classic cluster nodes get public IP addresses, still behind network security rules.
+- Unity Catalog file events not configured; Auto Loader uses directory listing.
 - The access connector has account-wide Storage Blob Data Contributor; fine-grained access is enforced by Unity Catalog.
 
 ## Teardown
