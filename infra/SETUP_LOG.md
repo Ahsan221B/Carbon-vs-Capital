@@ -255,37 +255,6 @@ All four passed "Test connection" (read, list, write, delete).
 
 ---
 
-## 2026-09-29 — Unity Catalog storage credential and external locations
-
-**Storage credential**
-
-| Name | Type | Identity | Purpose |
-|---|---|---|---|
-| `cred_carboncap_adls` | Azure Managed Identity | Access connector `ac-carboncap-dev` (system-assigned) | Unity Catalog's identity for reaching `stcarboncapdevzm` |
-
-**External locations**
-
-| Name | URL | Credential |
-|---|---|---|
-| `ext_landing` | `abfss://landing@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
-| `ext_bronze` | `abfss://bronze@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
-| `ext_silver` | `abfss://silver@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
-| `ext_gold` | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
-
-Test connection: read, list, write, delete, path exists and hierarchical namespace all passed.
-
-**File events: not configured.** The test failed with 403 because the connector lacks Storage Account
-Contributor, EventGrid EventSubscription Contributor and Storage Queue Data Contributor. Not granted
-on purpose: Storage Account Contributor is a broad control-plane role (it can read account keys).
-Auto Loader will use directory listing, which is fine at this file volume. Revisit in Phase 2.
-
-> Pattern: Azure RBAC gives the connector coarse access to the storage account; Unity Catalog
-> grants control per-user access per path. No mount points, storage keys or service principal secrets.
-
-**Not used:** credential and external location `dbw_carboncap_dev` (auto-created for the default workspace catalog).
-
----
-
 ## 2026-09-29 — Unity Catalog catalog, schemas and volume
 
 | Object | Type | Storage |
@@ -314,6 +283,7 @@ Auto Loader will use directory listing, which is fine at this file volume. Revis
 - Key Vault is reachable over the public internet (no private endpoint); purge protection is off.
 - Databricks workspace deployed without secure cluster connectivity (no NAT gateway, to avoid ~$30+/month);
   classic cluster nodes get public IP addresses, still behind network security rules.
+- Unity Catalog file events not configured; Auto Loader uses directory listing.
 
 ## Teardown
 
