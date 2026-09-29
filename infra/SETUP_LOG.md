@@ -226,6 +226,85 @@ Compute strategy: ADR 0008 (supersedes ADR 0007).
 
 ---
 
+## 2026-09-29 — Unity Catalog storage credential and external locations
+
+**Storage credential**
+
+| Name | Type | Identity | Purpose |
+|---|---|---|---|
+| `cred_carboncap_adls` | Azure Managed Identity | Access connector `ac-carboncap-dev` (system-assigned) | Unity Catalog's identity for reaching `stcarboncapdevzm` |
+
+**External locations**
+
+| Name | URL | Credential | Use |
+|---|---|---|---|
+| `ext_landing` | `abfss://landing@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Raw source files (zips, JSON) as received |
+| `ext_bronze` | `abfss://bronze@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Managed storage for the bronze schema |
+| `ext_silver` | `abfss://silver@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Managed storage for the silver schema |
+| `ext_gold` | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` | Managed storage for the gold schema |
+
+All four passed "Test connection" (read, list, write, delete).
+
+> Pattern: Azure RBAC gives the access connector coarse access to the storage account;
+> Unity Catalog grants (READ FILES, WRITE FILES, CREATE MANAGED STORAGE, ...) control
+> per-user access per path. No mount points, storage keys or service principal secrets are used.
+
+**File events:** off for now (Auto Loader notification mode to be decided in Phase 2).
+
+**Estimated cost:** $0 (metadata only).
+
+---
+
+## 2026-09-29 — Unity Catalog storage credential and external locations
+
+**Storage credential**
+
+| Name | Type | Identity | Purpose |
+|---|---|---|---|
+| `cred_carboncap_adls` | Azure Managed Identity | Access connector `ac-carboncap-dev` (system-assigned) | Unity Catalog's identity for reaching `stcarboncapdevzm` |
+
+**External locations**
+
+| Name | URL | Credential |
+|---|---|---|
+| `ext_landing` | `abfss://landing@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
+| `ext_bronze` | `abfss://bronze@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
+| `ext_silver` | `abfss://silver@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
+| `ext_gold` | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/` | `cred_carboncap_adls` |
+
+Test connection: read, list, write, delete, path exists and hierarchical namespace all passed.
+
+**File events: not configured.** The test failed with 403 because the connector lacks Storage Account
+Contributor, EventGrid EventSubscription Contributor and Storage Queue Data Contributor. Not granted
+on purpose: Storage Account Contributor is a broad control-plane role (it can read account keys).
+Auto Loader will use directory listing, which is fine at this file volume. Revisit in Phase 2.
+
+> Pattern: Azure RBAC gives the connector coarse access to the storage account; Unity Catalog
+> grants control per-user access per path. No mount points, storage keys or service principal secrets.
+
+**Not used:** credential and external location `dbw_carboncap_dev` (auto-created for the default workspace catalog).
+
+---
+
+## 2026-09-29 — Unity Catalog catalog, schemas and volume
+
+| Object | Type | Storage |
+|---|---|---|
+| `carbon_capital` | Catalog (Standard) | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/_catalog_default` (fallback only) |
+| `carbon_capital.bronze` | Schema (managed tables) | `abfss://bronze@stcarboncapdevzm.dfs.core.windows.net/managed` |
+| `carbon_capital.silver` | Schema (managed tables) | `abfss://silver@stcarboncapdevzm.dfs.core.windows.net/managed` |
+| `carbon_capital.gold` | Schema (managed tables) | `abfss://gold@stcarboncapdevzm.dfs.core.windows.net/managed` |
+| `carbon_capital.landing` | Schema (volumes only) | inherits the catalog location (unused) |
+| `carbon_capital.landing.raw` | External volume | `abfss://landing@stcarboncapdevzm.dfs.core.windows.net/files` |
+
+- Tables are Unity Catalog **managed** tables stored in our own containers (not Databricks' internal storage).
+- Source files are accessed as `/Volumes/carbon_capital/landing/raw/...`, governed by Unity Catalog.
+- Managed locations and the volume use separate sibling sub-paths, because Unity Catalog forbids overlapping managed storage with external volumes.
+
+**Estimated cost:** $0 (metadata only).
+
+---
+
 ## Known limitations (development environment)
 
 - LRS only. Bronze contains data that can't be recreated later (CDC history, daily price snapshots); production would use ZRS or GZRS.
