@@ -15,7 +15,7 @@ quota is now 8 vCPUs (regional total 10). The constraint behind ADR 0007 no long
   (4 vCPUs, 16 GB, local SSD), auto-terminating after 15 minutes idle.
 - **Scheduled pipelines:** single-node job clusters on `Standard_D4ds_v5`, created per run.
 - **Guardrail:** a cluster policy restricts all clusters to single node, the D4ds_v5 node type,
-  mandatory auto-termination and project tags. No cluster is created before the policy exists.
+  mandatory auto-termination and Photon off. No cluster is created before the policy exists.
 - The workspace stays Hybrid, so serverless remains available for an optional cost comparison.
 
 ## Alternatives considered
@@ -32,3 +32,12 @@ quota is now 8 vCPUs (regional total 10). The constraint behind ADR 0007 no long
 - Cluster startup takes a few minutes; this is acceptable for batch work.
 - Nodes get public IP addresses because secure cluster connectivity is disabled to avoid NAT gateway
   cost (see setup log, known limitations).
+
+## Update — 2026-09-29
+
+Cluster start failed with `CLOUD_PROVIDER_RESOURCE_STOCKOUT`. `az vm list-skus --all` shows
+Standard_D4ds_v5, D4ads_v5, D4s_v5 and E4bds_v5 as `NotAvailableForSubscription` in East US 2:
+a subscription-level SKU restriction, separate from the (approved) DDSv5 quota.
+A support request has been filed to lift it. Until then, development runs on **serverless compute**
+(proven by the Phase 0 smoke test). The cluster policy stays in place for when classic compute becomes available.
+Project tags were also removed from the policy: they are inherited from the workspace's Azure tags.
