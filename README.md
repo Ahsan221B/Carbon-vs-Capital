@@ -72,6 +72,7 @@ flowchart LR
 * An ADLS Gen2 storage account with `landing`, `bronze`, `silver` and `gold` containers, governed by a Unity Catalog catalog called `carbon_capital`.
 * Azure Databricks with Unity Catalog, an access connector (managed identity, no keys) and a Key Vault backed secret scope.
 * Azure Key Vault for every secret. Nothing sensitive lives in this repository.
+* Azure Data Factory (`adf-carboncap-dev-zm`) with a system assigned managed identity. Pipelines are next.
 * Two free Azure SQL databases. `sqldb-research` plays an internal analyst system whose edits change data capture will pick up later. `sqldb-etl-meta` holds the control table that drives ingestion and an audit table with one row per pipeline run.
 
 **How ingestion will work**
