@@ -438,6 +438,45 @@ This one holds the pipeline's own metadata: the control table that tells ADF wha
 
 ---
 
+## 2026-11-14: Azure Data Factory
+
+ADF is the orchestrator. It will run one metadata driven pipeline that reads the control table in `sqldb-etl-meta` and lands every source in the `landing` container. Transformations happen in Databricks, not in ADF.
+
+| Setting | Value | Why |
+|---|---|---|
+| Resource provider | `Microsoft.DataFactory` registered | Required once per subscription before creating a factory |
+| Name | `adf-carboncap-dev-zm` | Globally unique; `adf-` prefix |
+| Resource group | `rg-carbon-capital-dev` | |
+| Region | East US 2 | Same region as storage and SQL (ADR 0001) |
+| Version | V2 | |
+| Git | Configured later | Linking GitHub is its own step, so I can choose the branches and root folder deliberately |
+| Network | Public endpoint, managed virtual network off | A managed virtual network adds an hourly integration runtime charge |
+| Integration runtime | `AutoResolveIntegrationRuntime` (Azure, public) | Shared compute managed by Azure; no machines to run |
+| Encryption | Microsoft managed key | |
+| Identity | System assigned managed identity (IDs on the factory's Properties page) | ADF reaches storage, Key Vault and SQL with this identity, so no keys or passwords are stored |
+| Tags | `project=carbon-vs-capital`, `env=dev`, `owner=zef` | |
+
+**Test:** ADF Studio opens, and Manage, Integration runtimes shows `AutoResolveIntegrationRuntime` as Running.
+
+**Estimated cost:** $0 while empty. At my scale, a daily run costs cents to about $2 a month (roughly $1 per 1,000 activity runs and $0.25 per DIU hour for copies).
+
+> I avoid Mapping Data Flows, which start a Spark cluster with at least 8 vCores. Databricks does the transformations instead.
+
+**Access grants for the ADF managed identity** (least privilege: only what each job needs)
+
+| Target | Grant | Why |
+|---|---|---|
+| `landing` container in `stcarboncapdevzm` | Storage Blob Data Contributor, scoped to the container | ADF only writes raw files to `landing`; bronze and later layers belong to Databricks |
+| `kv-carboncap-dev-zm` | Key Vault Secrets User | Read secrets such as the OpenFIGI key; it can't create or change them |
+| `sqldb-research` | Database user from Entra, member of `db_datareader` | ADF only reads this database (`sql/azure_sql/research/001_grant_adf_read.sql`) |
+| `sqldb-etl-meta` | Database user from Entra with `SELECT` and `EXECUTE` on schema `etl` | It reads the control table and calls the procedures, but has no direct write rights, so the procedures are the only way to change the audit table or a watermark (`sql/azure_sql/etl_meta/003_grant_adf.sql`) |
+
+**Test:** the role assignments show on the container and the vault, and `sys.database_principals` shows `adf-carboncap-dev-zm` as `EXTERNAL_USER` with the expected role and permissions in both databases.
+
+Access to Databricks comes later, when ADF starts triggering the prices job.
+
+---
+
 ## Known limitations (development environment)
 
 - LRS only. Bronze contains data that can't be recreated later (CDC history, daily price snapshots); production would use ZRS or GZRS.
@@ -462,4 +501,5 @@ This one holds the pipeline's own metadata: the control table that tells ADF wha
 - A deleted Key Vault stays soft-deleted for 7 days and its name stays reserved. To reuse the name
   sooner, purge it: Key Vaults → Manage deleted vaults → Purge.
 - Deleting the Databricks workspace also deletes its managed resource group.
+- **Data Factory:** stop any triggers, then delete `adf-carboncap-dev-zm`. Its managed identity and role assignments go with it.
 - **Azure SQL:** delete the databases, then the logical server. A free offer database can be recreated later as long as the subscription stays under 10 free databases in the same region.
