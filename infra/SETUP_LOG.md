@@ -360,6 +360,84 @@ Phase 0 done criterion met: a Databricks notebook reads a file from ADLS through
 
 ---
 
+## 2026-11-06: Azure SQL region access request
+
+I tried to create the Azure SQL logical server for the free offer database in East US 2, and the portal blocked it with this message: "Your subscription does not have access to create a server in the selected region."
+
+This is a separate gate from vCPU quota and from VM SKU restrictions. New pay as you go subscriptions often need region access approved before they can create SQL servers in busy regions.
+
+| Field | Value |
+|---|---|
+| Support request ID | 2611050050004788 |
+| Type | Service and subscription limits (quotas) |
+| Problem type | SQL Database |
+| Request | Region access, East US 2, 2 vCores |
+| Severity | C (minimal impact) |
+| Support plan | Basic (free) |
+| Status | Approved on 2026-11-10 (quota `DBRegionEnablementWhitelist` set to 2) |
+
+Microsoft first asked which SKU I needed. I replied with General Purpose, serverless, Standard-series (Gen5), 2 vCores, free offer, and they approved region access the next day.
+
+I waited for East US 2 instead of switching regions. The free offer keeps every free database in a subscription in the region of the first one, and the rest of the project lives in East US 2 (ADR 0001).
+
+> How to reach the quota flow: open Help + support, select Create a support request, search for `quota`, choose **None of the above** for the service, then pick Service and subscription limits (quotas). Choosing SQL Database as the service leads to technical support instead, which needs a paid plan.
+
+**Estimated cost:** $0. Quota requests are free on the Basic plan.
+
+---
+
+## 2026-11-12: Azure SQL logical server and databases
+
+The research database plays the part of an internal system that analysts maintain: the company universe, sample portfolio holdings and, later, analyst overrides of entity matches. Their edits are what change data capture will pick up in Phase 3.
+
+**Logical server**
+
+| Setting | Value | Why |
+|---|---|---|
+| Name | `sql-carboncap-dev-zm` | Globally unique; `sql-` prefix |
+| FQDN | `sql-carboncap-dev-zm.database.windows.net` | |
+| Resource group | `rg-carbon-capital-dev` | |
+| Region | East US 2 | Same region as everything else (ADR 0001) |
+| Authentication | Microsoft Entra only | No SQL passwords to store or rotate; ADF will connect with its managed identity |
+| Entra admin | My own account (shown as a guest in my tenant) | Personal project; a group would be better in a team |
+| Public network access | Selected networks | Only the firewall rules below can connect |
+| Firewall rule | My home IP address (`ClientIp-2026-11-12`) | Lets me use the portal Query editor and local tools; my IP can change, so I may need to update it |
+| Allow Azure services | On | ADF's shared integration runtime has no fixed IP, and SQL firewall rules can't use service tags |
+| Minimum TLS | 1.2 | |
+| Connection policy | Default | Redirect inside Azure, proxy from outside |
+
+**Database**
+
+| Setting | Value | Why |
+|---|---|---|
+| Name | `sqldb-research` | |
+| Offer | Azure SQL Database free offer | 100,000 vCore seconds, 32 GB data and 32 GB backup free every month, for the life of the subscription |
+| Tier | General Purpose, serverless, Gen5, 2 vCores | Set by the free offer; supports change data capture |
+| Max storage | 32 GB | Free offer limit |
+| Auto-pause delay | 1 hour | The free offer doesn't let me change it; see the cost note below |
+| Tags | `project=carbon-vs-capital`, `env=dev`, `owner=zef` | |
+
+**Second database: `sqldb-etl-meta`**
+
+This one holds the pipeline's own metadata: the control table that tells ADF what to ingest, and the audit table that records every run. I keep it apart from the research database because in a real company you never store ETL state inside a system you ingest from. Each free offer database gets its own monthly allowance, so the separation costs nothing.
+
+| Setting | Value |
+|---|---|
+| Server | `sql-carboncap-dev-zm` (same server, so networking and security settings are shared) |
+| Offer and tier | Free offer, General Purpose, serverless, Gen5, 2 vCores |
+| Auto-pause delay | 1 hour (fixed by the free offer) |
+| Tags | `project=carbon-vs-capital`, `env=dev`, `owner=zef` |
+
+**Test:** I signed in to the portal Query editor with Entra and ran `SELECT @@VERSION, DB_NAME(), SUSER_SNAME();`. It returned Microsoft SQL Azure (RTM) 12.0.2000.8, the database `sqldb-research` and my Entra login. Used space after creation was 4.5 MB.
+
+**Estimated cost:** $0 inside the free allowance. With the default behaviour, the database pauses until the next month instead of billing me when the allowance runs out.
+
+> With a fixed 1 hour delay, every wake up costs at least about 1,800 vCore seconds (0.5 vCore for an hour), so 30 daily runs use roughly half of each database's 100,000 free vCore seconds. I keep scheduled ingestion to one run a day and batch my own work in the databases into single sessions.
+>
+> Serverless compute is billed every second on whichever is highest: the minimum vCores, the vCores in use, or memory in GB divided by 3. Each time the database wakes up, it stays online for at least the auto-pause delay, so a long delay burns the free allowance on every pipeline run. Open connections (a query editor tab, VS Code, SSMS) keep it awake.
+
+---
+
 ## Known limitations (development environment)
 
 - LRS only. Bronze contains data that can't be recreated later (CDC history, daily price snapshots); production would use ZRS or GZRS.
@@ -374,6 +452,8 @@ Phase 0 done criterion met: a Databricks notebook reads a file from ADLS through
 - The AzureDatabricks app can read every secret in the vault (acceptable: the vault is dedicated to this project).
 - Classic VM sizes are restricted for this subscription in East US 2; development runs on serverless until lifted (ADR 0008 update).
 - The cluster policy is a guardrail against mistakes; a workspace admin can still create clusters outside it.
+- Azure SQL uses a public endpoint with "Allow Azure services" switched on, so ADF's shared integration runtime can reach it; Entra only authentication is the gate. Production would use a private endpoint.
+- The free Azure SQL database keeps 7 days of point in time restore on locally redundant backup storage, with no long term retention.
 
 ## Teardown
 
@@ -382,3 +462,4 @@ Phase 0 done criterion met: a Databricks notebook reads a file from ADLS through
 - A deleted Key Vault stays soft-deleted for 7 days and its name stays reserved. To reuse the name
   sooner, purge it: Key Vaults → Manage deleted vaults → Purge.
 - Deleting the Databricks workspace also deletes its managed resource group.
+- **Azure SQL:** delete the databases, then the logical server. A free offer database can be recreated later as long as the subscription stays under 10 free databases in the same region.
