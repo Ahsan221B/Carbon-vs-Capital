@@ -1,0 +1,10 @@
+{
+	"name": "ls_adls_carboncap",
+	"properties": {
+		"annotations": [],
+		"type": "AzureBlobFS",
+		"typeProperties": {
+			"url": "https://stcarboncapdevzm.dfs.core.windows.net"
+		}
+	}
+}
