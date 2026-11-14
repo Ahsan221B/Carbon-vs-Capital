@@ -475,6 +475,17 @@ ADF is the orchestrator. It will run one metadata driven pipeline that reads the
 
 Access to Databricks comes later, when ADF starts triggering the prices job.
 
+**Git integration** (configured 2026-11-14)
+
+| Setting | Value | Why |
+|---|---|---|
+| Repository | GitHub, `Ahsan221B/Carbon-vs-Capital` | Pipelines, datasets and linked services live in the repo as JSON, with history and pull requests |
+| Collaboration branch | `main` | I build on feature branches in ADF Studio and merge through pull requests |
+| Publish branch | `adf_publish` | Publishing writes ARM templates here; triggers only run published versions |
+| Root folder | `/adf` | Keeps ADF's JSON separate from the rest of the project |
+| Import existing resources | No | The factory was empty |
+| Custom commit comment | Enabled | Each save in ADF Studio asks for a commit message |
+
 ---
 
 ## Known limitations (development environment)
